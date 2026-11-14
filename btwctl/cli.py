@@ -275,7 +275,7 @@ def cmd_monitor(args):
 
     def ask_state(send):
         from .device import aptx_key
-        key = aptx_key()
+        key = tracker.aptx_key = aptx_key()
         for cmd, payload in P.STATE_QUERIES:
             if payload == [P.BT_GET, P.GET_APTX]:
                 payload = [P.BT_GET, key]

@@ -205,11 +205,16 @@ class ChangeTracker:
     Several processes may share the dongle (see broker.py), so the stream also
     contains the replies to their status queries. Only reports that change the
     known state are interesting; the first value seen for anything just sets
-    the baseline (printed, but not worth a notification)."""
+    the baseline (printed, but not worth a notification).
 
-    def __init__(self):
+    aptx_key is the key the aptX mode is read from on this dongle (GET_APTX_ACTIVE
+    on the BT-W6). Changes of the other aptX key are shown but don't notify: the
+    BT-W5 also sends key 08 unprompted, which would notify twice."""
+
+    def __init__(self, aptx_key=GET_APTX):
         self.conn = None
         self.settings = {}
+        self.aptx_key = aptx_key
 
     def feed(self, cmd, p):
         """-> (text, notification) if this report changes the state, else None.
@@ -237,7 +242,9 @@ class ChangeTracker:
             first = key not in self.settings
             self.settings[key] = value
             name, val = setting_text(key, value)
-            quiet = first or key == GET_APTX_ACTIVE
+            if key == self.aptx_key:
+                name = "aptX Adaptive mode"
+            quiet = first or (key in (GET_APTX, GET_APTX_ACTIVE) and key != self.aptx_key)
             return f"{name}: {val}", None if quiet else (f"{name}: {val}", "")
         r = parse_scan(p)
         if r:

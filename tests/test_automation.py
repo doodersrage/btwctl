@@ -174,6 +174,45 @@ def test_preferences_on_btw6(cfg, tmp_path):
     assert bytes([P.BT_GET, P.GET_APTX]) not in r.sent
 
 
+class StubbornRig(Rig):
+    """A dongle that acks aptX changes but keeps its mode."""
+
+    def send(self, cmd, payload):
+        if payload[0] == P.BT_SET and payload[1] == P.SET_APTX:
+            self.sent.append(bytes(payload))
+            return
+        super().send(cmd, payload)
+
+
+def test_game_mode_tries_low_latency_once(cfg, tmp_path):
+    cfg.game_mode = True
+    r = StubbornRig(cfg, tmp_path, aptx=0x40)
+    r.connect()
+    r.run(4)
+    r.games("reaper SteamLaunch AppId=1")
+    r.run(20)
+    assert r.sets() == [bytes([P.BT_SET, P.SET_APTX, 0x20])]
+    assert sum("switching to Low Latency" in s for s in r.said) == 1
+    # a new link (e.g. the headset reconnects) gets another try
+    r.report(conn_frame(P.CONN_DISCONNECTED)[4:])
+    r.connect()
+    r.run(10)
+    assert len(r.sets()) == 2
+
+
+def test_game_mode_undoes_high_quality_during_the_game(cfg, tmp_path):
+    cfg.game_mode = True
+    r = Rig(cfg, tmp_path, aptx=0x40)
+    r.connect()
+    r.run(4)
+    r.games("reaper SteamLaunch AppId=1")
+    r.run(4)
+    r.send(0, [P.BT_SET, P.SET_APTX, 0x40])   # e.g. a tray click
+    r.run(4)
+    assert r.values[P.GET_APTX] == 0x20
+    assert sum("switching to Low Latency" in s for s in r.said) == 2
+
+
 def test_game_mode_leaves_manual_change_alone(cfg, tmp_path):
     cfg.game_mode = True
     r = Rig(cfg, tmp_path, aptx=0x40)
