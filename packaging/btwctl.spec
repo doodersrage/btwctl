@@ -3,7 +3,7 @@
 %global srcname btwctl
 
 Name:           btwctl
-Version:        0.9.2
+Version:        0.9.3
 Release:        1%{?dist}
 Summary:        Control the Creative BT-W5 and BT-W6 Bluetooth audio dongles
 License:        MIT
@@ -74,6 +74,8 @@ udevadm control --reload-rules >/dev/null 2>&1 || :
 %{_datadir}/fish/vendor_completions.d/btw5-switch.fish
 
 %changelog
+* Sun Nov 22 2026 Robert McDowell <doodersrage@gmail.com> - 0.9.3-1
+- BT-W6: read and switch the aptX mode
 * Wed Nov 11 2026 Robert McDowell <doodersrage@gmail.com> - 0.9.2-1
 - Keep per-headset settings saved while that headset is connected
 * Wed Nov 11 2026 Robert McDowell <doodersrage@gmail.com> - 0.9.1-1
