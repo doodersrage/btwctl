@@ -110,3 +110,21 @@ def test_change_tracker_reports_only_changes():
     # acks and unrelated commands are ignored
     assert t.feed(P.CMD_ACK, bytes([0x6b, 0, 0x0a])) is None
     assert t.feed(P.CMD_INFO, b"\x02abc") is None
+
+
+def test_change_tracker_btw6_notifies_key_08():
+    # the BT-W6 has no readable key 03: key 08 is the aptX mode
+    t = P.ChangeTracker(aptx_key=P.GET_APTX_ACTIVE)
+    assert t.feed(P.CMD_BT, bytes([P.BT_GET, P.GET_APTX_ACTIVE, 0x40, 0x00])) == (
+        "aptX Adaptive mode: High Quality", None)
+    assert t.feed(P.CMD_BT, bytes([P.BT_GET, P.GET_APTX_ACTIVE, 0x20, 0x00]))[1] == (
+        "aptX Adaptive mode: Low Latency", "")
+
+
+def test_prefixed_text():
+    # BT-W6 key 09 (device name) and 0a, as captured from the Creative app
+    assert P.prefixed_text(bytes.fromhex("0842542d57362030 38".replace(" ", ""))) == "BT-W6 08"
+    assert P.prefixed_text(bytes.fromhex("06303030303030")) == "000000"
+    # values that aren't text
+    for v in ("40 00", "f5 03", "07 40", "3c b9 8a 08 00 02", "01", "", "02 41 42 43"):
+        assert P.prefixed_text(bytes.fromhex(v.replace(" ", ""))) is None, v

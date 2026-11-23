@@ -79,10 +79,12 @@ class Automation:
         self.game = None            # set of running game patterns while game mode is active
         self.saved_mode = None      # aptX mode to restore when the games exit
         self.restore = None         # [mode, tries]: restore after a game, once aptX is readable
+        self.ll_tried = False       # Low Latency sent for this game and link, not seen yet
         self.after_restart = False  # the dongle restarted (HFP change, forget): a user action
         self.quiet_until = 0.0      # ignore setting reports caused by our own commands until then
         self.seen = {}              # "aptx"/"hfp"/"auto-hfp" -> last value reported for this link
         self.last_aptx_query = -1e9
+        self.aptx_key = P.GET_APTX  # key that reads the aptX mode (key 08 on the BT-W6)
         self.quick_checks = 0
 
         if audio is None:
@@ -114,7 +116,7 @@ class Automation:
         now = self.clock()
         if now - self.last_aptx_query >= APTX_QUERY_INTERVAL:
             self.last_aptx_query = now
-            self.query(P.GET_APTX)
+            self.query(self.aptx_key)
             return True
         return False
 
@@ -138,6 +140,8 @@ class Automation:
         setting = P.parse_setting(p) if cmd == P.CMD_BT else None
         if setting:
             self.adopt_user_change(*setting)
+            if setting[0] in (P.GET_APTX, P.GET_APTX_ACTIVE) and setting[1] == P.APTX["ll"]:
+                self.ll_tried = False   # it took: a switch back to HQ during the game is undone
         if setting and setting[0] == P.GET_HFP:
             on = setting[1] == P.HFP_VALUES["on"]
             if on != self.hfp:
@@ -174,6 +178,7 @@ class Automation:
                 for key in (P.GET_APTX, P.GET_APTX_ACTIVE, P.GET_HFP, P.GET_AUTO_HFP):
                     self.tracker.settings.pop(key, None)
                 self.quick_checks = 0
+                self.ll_tried = False
                 self.next_game_check = min(self.next_game_check, self.clock() + APPLY_DELAY)
         elif state in (P.CONN_DISCONNECTED, P.CONN_NOT_CONNECTED):
             if self.connected and self.connected[0] == addr:
@@ -272,7 +277,7 @@ class Automation:
         if unknown and tries < APPLY_RETRIES:
             # not known yet (e.g. aptX isn't readable right after connecting): ask, retry soon
             for k in unknown:
-                self.query({"aptx": P.GET_APTX, "hfp": P.GET_HFP, "auto-hfp": P.GET_AUTO_HFP}[k])
+                self.query({"aptx": self.aptx_key, "hfp": P.GET_HFP, "auto-hfp": P.GET_AUTO_HFP}[k])
             self.pending = [addr, name, now + 1.5, tries + 1]
             return
         self.pending = None
@@ -289,7 +294,7 @@ class Automation:
             self.set(P.SET_AUTO_HFP, P.AUTO_HFP_VALUES[changes["auto-hfp"]])
         if "hfp" in changes:   # last: the dongle restarts after this one
             self.set(P.SET_HFP, P.HFP_VALUES[changes["hfp"]])
-        for key in (P.GET_APTX, P.GET_AUTO_HFP):
+        for key in (self.aptx_key, P.GET_AUTO_HFP):
             self.query(key)
 
     # --- game mode --------------------------------------------------------------------
@@ -322,14 +327,17 @@ class Automation:
                 if self.connected:         # e.g. the headset reconnected during the game
                     self.ask_aptx()
                     self.recheck_soon()
-            elif mode != P.APTX["ll"]:
+            elif mode != P.APTX["ll"] and not self.ll_tried:
+                # once: if the dongle doesn't take it, don't resend and announce it every check
+                self.ll_tried = True
                 self.set(P.SET_APTX, P.APTX["ll"])
-                self.query(P.GET_APTX)
+                self.query(self.aptx_key)
                 self.tell(f"Game running ({', '.join(sorted(games))}): switching to Low Latency")
             return
 
         if self.game is not None:
             self.game = None
+            self.ll_tried = False
             if self.saved_mode:
                 self.restore = [self.saved_mode, 0]
             self.saved_mode = None
@@ -348,5 +356,5 @@ class Automation:
             # only if it's still Low Latency: if the user changed it meanwhile, leave it
             if mode == P.APTX["ll"]:
                 self.set(P.SET_APTX, restore)
-                self.query(P.GET_APTX)
+                self.query(self.aptx_key)
                 self.tell(f"Game closed: back to {P.APTX_NAMES[restore]}")
